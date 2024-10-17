@@ -1,0 +1,14 @@
+# Identify continuous columns
+continuous_cols <- sapply(df, is.numeric)
+
+# Scale only the continuous columns
+scaled_continuous <- scale(df[, continuous_cols])
+
+# Convert the scaled matrix back to a data frame
+scaled_continuous <- as.data.frame(scaled_continuous)
+
+# Rename the scaled columns
+colnames(scaled_continuous) <- paste0("scaled_", colnames(df)[continuous_cols])
+
+# Combine scaled continuous columns with original categorical columns
+final_df <- cbind(scaled_continuous, df[, !continuous_cols, drop = FALSE])

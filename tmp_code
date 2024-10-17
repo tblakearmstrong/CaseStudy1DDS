@@ -21,13 +21,8 @@ library(class)
 # Assuming 'df' is your pre-scaled data frame and 'attrition' is the target variable
 set.seed(123)  # For reproducibility
 
-# Function to calculate metrics
-calculate_metrics <- function(confusion_mat) {
-  accuracy <- sum(diag(confusion_mat)) / sum(confusion_mat)
-  sensitivity <- confusion_mat[2, 2] / sum(confusion_mat[2, ])
-  specificity <- confusion_mat[1, 1] / sum(confusion_mat[1, ])
-  return(c(accuracy = accuracy, sensitivity = sensitivity, specificity = specificity))
-}
+# Ensure the target variable is a factor
+df$attrition <- as.factor(df$attrition)
 
 # Initialize results storage
 results <- data.frame(variable = character(),
@@ -40,34 +35,25 @@ results <- data.frame(variable = character(),
 # Loop through each continuous column
 for (var in colnames(df)[sapply(df, is.numeric)]) {
   
-  # Perform Leave-One-Out Cross-Validation
+  # Loop through k values
   for (k in 1:50) {
-    predictions <- character(nrow(df))
-    
-    for (i in 1:nrow(df)) {
-      # Create training and test sets
-      train_data <- df[-i, ]
-      test_data <- df[i, , drop = FALSE]
-      
-      # Predict using k-NN
-      predictions[i] <- knn(train = train_data[, var, drop = FALSE],
-                             test = test_data[, var, drop = FALSE],
-                             cl = train_data$attrition,
-                             k = k)
-    }
+    # Predict using LOOCV with knn.cv
+    predictions <- knn.cv(train = df[, var, drop = FALSE],
+                           cl = df$attrition,
+                           k = k)
     
     # Create confusion matrix
     confusion_mat <- table(predictions, df$attrition)
     
-    # Calculate metrics
-    metrics <- calculate_metrics(confusion_mat)
+    # Use confusionMatrix function to calculate metrics
+    cm <- confusionMatrix(confusion_mat)
     
     # Store results
     results <- rbind(results, data.frame(variable = var,
                                           k_value = k,
-                                          accuracy = metrics['accuracy'],
-                                          sensitivity = metrics['sensitivity'],
-                                          specificity = metrics['specificity']))
+                                          accuracy = cm$overall['Accuracy'],
+                                          sensitivity = cm$byClass['Sensitivity'],
+                                          specificity = cm$byClass['Specificity']))
   }
 }
 

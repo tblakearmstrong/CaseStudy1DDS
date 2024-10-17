@@ -12,3 +12,43 @@ colnames(scaled_continuous) <- paste0("scaled_", colnames(df)[continuous_cols])
 
 # Combine scaled continuous columns with original categorical columns
 final_df <- cbind(scaled_continuous, df[, !continuous_cols, drop = FALSE])
+
+
+
+
+for (var in colnames(scaled_df)[-ncol(scaled_df)]) {
+  
+  # Prepare data for training/testing
+  train_indices <- sample(1:nrow(scaled_df), size = 0.7 * nrow(scaled_df))
+  train_data <- scaled_df[train_indices, ]
+  test_data <- scaled_df[-train_indices, ]
+  
+  # Loop through k values
+  for (k in 1:50) {
+    # Predict using k-NN
+    predictions <- knn(train = train_data[, var, drop = FALSE],
+                       test = test_data[, var, drop = FALSE],
+                       cl = train_data$attrition,
+                       k = k)
+    
+    # Create confusion matrix
+    confusion_mat <- table(predictions, test_data$attrition)
+    
+    # Calculate metrics
+    metrics <- calculate_metrics(confusion_mat)
+    
+    # Store results
+    results <- rbind(results, data.frame(variable = var,
+                                          k_value = k,
+                                          accuracy = metrics['accuracy'],
+                                          sensitivity = metrics['sensitivity'],
+                                          specificity = metrics['specificity']))
+  }
+}
+
+# Find top three variables based on accuracy
+top_results <- results[order(-results$accuracy), ]
+top_three <- head(top_results, 3)
+
+# Display the top three variables and their best k
+print(top_three)

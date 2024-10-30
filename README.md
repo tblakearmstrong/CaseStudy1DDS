@@ -25,6 +25,6 @@ Upon identifying the most effective model, DDSAnalytics will apply the selected 
 
 All findings, methodologies, and results will be documented comprehensively. DDSAnalytics will provide presentation materials and the accompanying code in both R Markdown and PowerPoint formats. These resources will facilitate knowledge transfer, enabling Frito Lay's teams to understand the analytical processes and insights generated through this project.
 
-# Conclusion
+## Conclusion
 
 Through this collaboration, DDSAnalytics aims to equip Frito Lay with robust predictive capabilities that will enhance their understanding of employee attrition. By leveraging advanced modeling techniques, the company will be better positioned to implement proactive measures, ultimately fostering a more stable and engaged workforce.

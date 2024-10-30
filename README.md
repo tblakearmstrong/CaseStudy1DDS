@@ -3,7 +3,7 @@
 
 DDSAnalytics is a data-driven consulting firm specializing in predictive analytics and modeling solutions. With a strong focus on leveraging statistical methodologies and machine learning techniques, DDSAnalytics empowers organizations to make informed decisions based on data insights.
 
-Project Scope: Attrition Prediction for Frito Lay
+## Project Scope: Attrition Prediction for Frito Lay
 
 Recently, DDSAnalytics has been engaged by Frito Lay to develop a predictive model aimed at understanding employee attrition within the company. Recognizing the critical impact of workforce stability on operational efficiency and cost management, Frito Lay seeks to identify potential attrition risks and implement strategic interventions.
 

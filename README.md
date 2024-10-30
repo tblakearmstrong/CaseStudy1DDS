@@ -1,7 +1,3 @@
-# CaseStudy1DDS
-DDS Analytics Study 1
-
-
 # Executive Summary
 ## Company Overview: DDSAnalytics
 

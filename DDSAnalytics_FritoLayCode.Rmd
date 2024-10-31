@@ -1,0 +1,470 @@
+---
+title: "DDSAnalytics Attrition Analysis for Frito Lay"
+author: "Turner Armstrong"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+YouTube Presentation Link: <url>
+
+```{r packages, include =FALSE}
+library(knitr)
+library(readr)
+library(naniar)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(GGally)
+library(e1071)
+library(class)
+library(caret)
+library(tidyr)
+```
+
+### **Data Analysis**
+#### **Step 1**: Load the data and quickly look at structure and completeness
+**Overview of Dataset and Missing Variables**
+```{r read in the dataset, include = FALSE}
+dataset <- read.csv("C:\\Users\\Blake Armstrong\\OneDrive\\Desktop\\MSDS\\Case Study 1\\CaseStudy1-data.csv", header = TRUE)
+
+# Look at the structure and head of the data
+str(dataset$Age)
+head(dataset)
+
+```
+
+
+```{r Check for missing Values}
+# Check for missing values in the dataset
+gg_miss_var(dataset)
+
+```
+
+#### **Step 2**: Analyze and explore the data with exploratory data analysis techniques (EDA)
+ **2.1) Explore Age Variable vs. Attrition**
+```{r Age Variable vs. Attrition}
+
+##2.1.1 Age Distribution by Attrition
+ggplotly(ggplot(dataset, aes(x = Attrition, y = Age, fill = Attrition)) + 
+           geom_boxplot() + 
+           labs(title = "Age Distribution by Attrition Category"))
+
+
+##2.1.2 Age Buckets
+# Combine Age into buckets for analysis
+dataset$AgeFactor <- cut(dataset$Age, 
+                          breaks = c(17, 20, 25, 30, 35, 40, 45, 50, 55, 61), 
+                          labels = c("18-20", "21-25", "26-30", "31-35", "36-40", "41-45", "46-50", "51-55", "56-60"),
+                          right = FALSE)
+
+# Calculate attrition percentage by age group
+dataset %>%
+  group_by(AgeFactor) %>%
+  mutate(total_count = n()) %>%
+  group_by(AgeFactor, Attrition) %>%
+  summarize(count = n(), total_count = first(total_count), .groups = 'drop') %>%
+  mutate(age_percent = (count / total_count) * 100) %>%
+  ggplot(aes(x = AgeFactor, y = age_percent, fill = Attrition)) +
+  geom_bar(stat = "identity", position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title = 'Attrition % by Age Group', x = "Age", y = "Percent")
+```
+
+Look at t-test to verify the sample means are indeed different to determine that age does in fact have an impact to attrition.
+```{r}
+
+# T-Test for Age
+# T-Test to determine if sample means are different
+dataset$Attrition <- as.factor(dataset$Attrition)
+t.test(Age ~ Attrition, data = dataset, mu = 0, conf.level = 0.95)
+```
+
+ **2.2) Explore Monthly Income vs. Attrition**
+```{r Monthly Income vs. Attrition}
+# Monthly Income Distribution by Attrition
+# Boxplot of Monthly Income by Attrition
+ggplotly(ggplot(dataset, aes(x = Attrition, y = MonthlyIncome, fill = Attrition)) +
+           geom_boxplot() + 
+           labs(title = "Attrition Distribution by Monthly Income", y = "Monthly Income"))
+```
+
+Similar to age, we look at the sample means in a t-test to verify the difference and infer that monthly income has an impact on attrition.
+```{r}
+# T-Test for Monthly Income
+# T-Test to determine if sample means are different
+t.test(MonthlyIncome ~ Attrition, data = dataset, mu = 0, conf.level = 0.95)
+
+```
+
+**2.3) Explore Overtime vs. Attrition**
+ - When we look at the graph, the left box is employees that chose to stay with the company while the right box is those employees that chose to leave.
+```{r Overtime vs. Attrition}
+# Calculate and plot overtime percentages by attrition
+dataset %>%
+  group_by(Attrition, OverTime) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  group_by(Attrition) %>%
+  mutate(percent = (count / sum(count)) * 100) %>%
+  ggplot(aes(x = OverTime, y = percent, fill = OverTime)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.2f", percent)), vjust = -0.5) +
+  facet_wrap(~ Attrition) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) + 
+  labs(title = "% Overtime by Attrition", 
+       x = "Overtime (No/Yes)", 
+       y = "% Employees")
+```
+
+### **Model Building**
+#### **Step 1**: Look at different models, and begin to build analysis
+##### The first model we want to look at training is a **k-NN Model.**
+  - To do this we will need to train the k-value.
+```{r k-NN Model data normalizing, include = FALSE}
+# Prepare dataset for k-NN model
+# Drop unnecessary columns
+cols_to_drop <- c("ID", "DailyRate", "EmployeeCount", "EmployeeNumber", "HourlyRate", "MonthlyRate", "Over18", "StandardHours")
+dataset <- dataset[, -which(names(dataset) %in% cols_to_drop)]
+
+# Identify continuous and categorical columns
+continuous_cols <- sapply(dataset, is.numeric)
+categorical_cols <- dataset[, !continuous_cols]
+
+# One-Hot Encode categorical variables, excluding Attrition
+categorical_cols <- categorical_cols[, !names(categorical_cols) %in% "Attrition"]
+encoded_categorical <- model.matrix(~ . - 1, data = categorical_cols)
+
+# Scale continuous columns
+scaled_continuous <- scale(dataset[, continuous_cols])
+scaled_continuous <- as.data.frame(scaled_continuous)
+colnames(scaled_continuous) <- paste0("scaled_", colnames(dataset)[continuous_cols])
+
+# Combine scaled continuous columns with original categorical columns
+dataset <- cbind(
+  Attrition = dataset$Attrition,
+  scaled_continuous[,], 
+  encoded_categorical
+)
+```
+
+
+```{r k-NN k training}
+# Running the k-NN Algorithm
+# Loop for many k and the average of many training/test partitions to tune k
+set.seed(1) # for reproducibility
+iterations = 30
+numks = 50
+splitperc = 0.7
+CostPerAttrition = 100000
+threshold = 0.15
+
+# Create matrices to store results
+masterAcc = matrix(nrow = iterations, ncol = numks)
+masterSens = matrix(nrow = iterations, ncol = numks)
+masterSpec = matrix(nrow = iterations, ncol = numks)
+masterF1 = matrix(nrow = iterations, ncol = numks)
+
+newmasterAcc = matrix(nrow = iterations, ncol = numks)
+newmasterSens = matrix(nrow = iterations, ncol = numks)
+newmasterSpec = matrix(nrow = iterations, ncol = numks)
+newmasterF1 = matrix(nrow = iterations, ncol = numks)
+
+for(j in 1:iterations) {
+  # Create training and testing datasets
+  trainIndices = sample(1:nrow(dataset), round(splitperc * nrow(dataset)))
+  train = dataset[trainIndices, ]
+  test = dataset[-trainIndices, ]
+  
+  for(i in 1:numks) {
+    # Perform k-NN classification
+    classifications = knn(train[, c("scaled_Age", "scaled_MonthlyIncome", "OverTimeYes")], 
+                          test[, c("scaled_Age", "scaled_MonthlyIncome", "OverTimeYes")], 
+                          train$Attrition, prob = TRUE, k = i)
+    
+    # Create a confusion matrix
+    CM = confusionMatrix(table(classifications, test$Attrition), mode = "everything")
+    
+    # Probability calculations for thresholding
+    probs = ifelse(classifications == "No", 1- attributes(classifications)$prob, attributes(classifications)$prob)
+    
+    # Apply lower threshold and reclass predictions
+    newclass = ifelse(probs >= threshold, "Yes", "No")
+    newtable = table(newclass, test$Attrition)
+    newCM = confusionMatrix(newtable, mode = "everything")
+    
+    # Store metrics directly from the new confusion matrix
+    masterAcc[j, i] = CM$overall["Accuracy"]          # Accuracy
+    masterSens[j, i] = CM$byClass["Sensitivity"]      # Sensitivity (Recall for class Yes)
+    masterSpec[j, i] = CM$byClass["Specificity"]      # Specificity (Recall for class No)
+    masterF1[j, i] = CM$byClass["F1"]                 # F1 Score
+  
+    newmasterAcc[j,i] = newCM$overall["Accuracy"]       # Accuracy
+    newmasterSens[j,i] = newCM$byClass["Sensitivity"]   # Sensitivity (Recall for class Yes)
+    newmasterSpec[j,i] = newCM$byClass["Specificity"]   # Specificity (Recall for class No)
+    newmasterF1[j, i] = newCM$byClass["F1"]              # F1 Score
+    }
+}
+```
+
+
+```{r colmeans for k-value, include=FALSE}
+#Take the average of all the iterations for each k-value
+##6.3 Mean Metrics Calculation
+# Calculate mean of each metric across iterations
+MeanAcc = colMeans(masterAcc)
+MeanSens = colMeans(masterSens)
+MeanSpec = colMeans(masterSpec)
+MeanF1 = colMeans(masterF1)
+
+newMeanAcc = colMeans(newmasterAcc)
+newMeanSens = colMeans(newmasterSens)
+newMeanSpec = colMeans(newmasterSpec)
+newMeanF1 = colMeans(newmasterF1)
+```
+
+
+```{r k-nn k-value plot}
+# Prepare a sequence for the x-axis based on the number of k values
+k_values = seq(1, numks, 1)
+
+# Combine all metrics into a data frame for ggplot
+metrics_df <- data.frame(k = k_values,
+                         Average_Accuracy = MeanAcc,
+                         Average_Sensitivity = MeanSens,
+                         Average_Specificity = MeanSpec,
+                         Average_F1_Score = MeanF1)
+
+# Reshape the data into long format
+metrics_long <- metrics_df %>%
+  pivot_longer(cols = -k, names_to = "Metric", values_to = "Value")
+
+# Plot using ggplot
+ggplot(metrics_long, aes(x = k, y = Value, color = Metric)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Performance Metrics vs k-value",
+       x = "k-value",
+       y = "Metric Value") +
+  scale_color_manual(values = c("blue", "red", "green", "purple")) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+##### **Tuning threshold for imbalanced datasets**
+  - The best threshold we found to reclassify the "Yes" is 15%
+```{r k-nn k-value with threshold tuned plot}
+# Prepare a sequence for the x-axis based on the number of k values
+k_values = seq(1, numks, 1)
+
+# Combine all metrics into a data frame for ggplot
+newmetrics_df <- data.frame(k = k_values,
+                         Average_Accuracy = newMeanAcc,
+                         Average_Sensitivity = newMeanSens,
+                         Average_Specificity = newMeanSpec,
+                         Average_F1_Score = newMeanF1)
+
+# Reshape the data into long format
+newmetrics_long <- newmetrics_df %>%
+  pivot_longer(cols = -k, names_to = "Metric", values_to = "Value")
+
+# Plot using ggplot
+ggplot(newmetrics_long, aes(x = k, y = Value, color = Metric)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Performance Metrics vs k-value with Tuned Threshold: 0.15",
+       x = "k-value",
+       y = "Metric Value") +
+  scale_color_manual(values = c("blue", "red", "green", "purple")) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+#### **Step 2**: Using the tuned k-value and threshold to run k-NN model
+  - 30 iterations to calculate model performance averages:
+```{r k-nn Model w/ Tuned k-Value}
+# Load necessary libraries
+library(class)  # For knn
+library(caret)  # For confusionMatrix
+library(ggplot2)  # For plotting
+
+# Previously tuned for k=35
+set.seed(1) # for reproducibility
+
+iterations = 30
+splitperc = 0.7
+CostPerAttrition = 100000
+threshold = 0.15
+k = 35
+
+# Create matrices to store results
+masterAcc = numeric(iterations)
+masterSens = numeric(iterations)
+masterSpec = numeric(iterations)
+masterF1 = numeric(iterations)
+
+for(i in 1:iterations) {
+  # Perform k-NN classification
+  classifications = knn(train[, c("scaled_Age", "scaled_MonthlyIncome", "OverTimeYes")], 
+                        test[, c("scaled_Age", "scaled_MonthlyIncome", "OverTimeYes")], 
+                        train$Attrition, prob = TRUE, k = k)
+  
+  # Create a confusion matrix with mode = "everything"
+  CM = confusionMatrix(table(classifications, test$Attrition), mode = "everything")
+  
+  # Calculate cost based on confusion matrix
+  AttritionCost = CostPerAttrition * CM$table[3] + CostPerAttrition / 2 * CM$table[4]
+  
+  # Probability calculations for thresholding
+  probs = ifelse(classifications == "No", 1 - attributes(classifications)$prob, attributes(classifications)$prob)
+  
+  newclass = ifelse(probs >= threshold, "Yes", "No")
+  newtable = table(newclass, test$Attrition)
+  newCM = confusionMatrix(newtable, mode = "everything")
+  
+  newAttritionCost = CostPerAttrition * newCM$table[3] + CostPerAttrition / 4 * newCM$table[4]
+  
+  # Store metrics directly from the confusion matrix
+  masterAcc[i] = newCM$overall["Accuracy"]          # Accuracy
+  masterSens[i] = newCM$byClass["Sensitivity"]      # Sensitivity (Recall for class Yes)
+  masterSpec[i] = newCM$byClass["Specificity"]      # Specificity (Recall for class No)
+  masterF1[i] = newCM$byClass["F1"]                 # F1 Score
+  
+}
+
+# Calculate mean of each metric across iterations
+MeanAcc = mean(masterAcc)
+MeanSens = mean(masterSens)
+MeanSpec = mean(masterSpec)
+MeanF1 = mean(masterF1)  # Mean F1 Score
+
+# Output results
+df <- data.frame(Variable = c("Average Accuracy", "Average Sensitivity", "Average Specificity", "Average F1"), Value = c(MeanAcc, MeanSens, MeanSpec, MeanF1))
+kable(df, caption = "Model Values")
+```
+
+
+##### The second model we want to look at training is a **Naive Bayes Model.**
+  - We run 30 iterations here to see seed effect on model stats.
+  - We maintain the 0.15 threshold to compare models apples-to-apples.
+```{r Naive Bayes}
+# Reread in data to reset dataset
+dataset<- read.csv("C:\\Users\\Blake Armstrong\\OneDrive\\Desktop\\MSDS\\Case Study 1\\CaseStudy1-data.csv", header=TRUE)
+dataset$OverTime <- as.factor(dataset$OverTime)
+
+library(e1071)  # For Naive Bayes
+library(caret)  # For confusionMatrix
+
+# Running the NB Algorithm
+set.seed(1) # for reproducibility
+
+iterations = 30
+splitPerc = 0.7
+CostPerAttrition = 100000
+threshold = 0.15
+
+# Initialize vectors for performance metrics
+masterAcc = numeric(iterations)
+masterSens = numeric(iterations)
+masterSpec = numeric(iterations)
+masterF1 = numeric(iterations)  # For F1 scores
+
+for(j in 1:iterations) {
+  # Sample indices for training
+  trainIndices = sample(1:nrow(dataset), round(splitPerc * nrow(dataset)))
+  
+  # Split dataset into training and testing sets
+  train = dataset[trainIndices,]
+  test = dataset[-trainIndices,]
+  
+  # Train the Naive Bayes model
+  model = naiveBayes(train[, c("Age", "MonthlyIncome", "OverTime")], train$Attrition, laplace = 1)
+  
+  # Make predictions on the test set
+  predictions = predict(model, test[, c("Age", "MonthlyIncome", "OverTime")], type = "class")
+  raw_predictions = predict(model, test[, c("Age", "MonthlyIncome", "OverTime")], type = "raw")
+  
+  # Reclass based off our threshold
+  newclass = ifelse(raw_predictions[, "Yes"] >= threshold, "Yes", "No")
+  
+  # Create a confusion matrix
+  newtable = table(newclass, test$Attrition)
+  newCM = confusionMatrix(newtable, mode = "everything")  # Using mode = "everything"
+  
+  # Store metrics directly from the confusion matrix
+  masterAcc[j] = newCM$overall["Accuracy"]          # Accuracy
+  masterSens[j] = newCM$byClass["Sensitivity"]      # Sensitivity (Recall for class Yes)
+  masterSpec[j] = newCM$byClass["Specificity"]      # Specificity (Recall for class No)
+  masterF1[j] = newCM$byClass["F1"]                 # F1 Score
+  
+  # Calculate the cost of the raw predicted attrition
+  raw_confusion_table = table(predictions, test$Attrition)
+  CM = confusionMatrix(raw_confusion_table, mode = "everything")
+  
+  AttritionCost = CostPerAttrition * CM$table[3] + CostPerAttrition / 2 * CM$table[4]
+  
+  # Calculate new attrition cost
+  newAttritionCost = CostPerAttrition * newCM$table[3] + CostPerAttrition / 4 * newCM$table[4]
+  }
+```
+
+
+```{r}
+# Create a data frame to hold all metrics
+results_df <- data.frame(
+  Iteration = rep(1:iterations, times = 4),  # Generate a sequence from 1 to iterations
+  Metric = c(rep("Accuracy", iterations), 
+             rep("Sensitivity", iterations), 
+             rep("Specificity", iterations), 
+             rep("F1 Score", iterations)),
+  Value = c(masterAcc, masterSens, masterSpec, masterF1)
+)
+
+# Plotting using ggplot
+ggplot(results_df, aes(x = Iteration, y = Value, color = Metric)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Performance Metrics vs Iteration",
+       x = "Iteration",
+       y = "Metric Value") +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  scale_color_manual(values = c("blue", "red", "green", "purple")) +
+  scale_y_continuous(limits = c(0.25, 0.9))
+
+
+
+```
+
+
+#### **Step 3**: Using the tuned threshold to run Naive Bayes model
+  - 30 iterations to calculate model performance averages:
+```{r}
+# Calculate mean of each metric across iterations
+MeanAcc = mean(masterAcc)
+MeanSens = mean(masterSens)
+MeanSpec = mean(masterSpec)
+MeanF1 = mean(masterF1)  # Mean F1 Score
+
+# Output results
+df <- data.frame(Variable = c("Average Accuracy", "Average Sensitivity", "Average Specificity", "Average F1"), Value = c(MeanAcc, MeanSens, MeanSpec, MeanF1))
+kable(df, caption = "Model Values")
+```
+
+
+### **Conclusion**
+```{html r, echo=TRUE}
+
+This analysis has explored various factors contributing to attrition, particularly focusing on Age, Monthly Income, and Overtime. A k-NN and Naive Bayes classification model were implemented to assess the impact of these factors on attrition prediction.  Ultimately we decided the NAive Bayes model was better at the prediction between the three variables.  While our positive prediction is lower than desired, we plan on adding more variables to better predict attrition.
+```
+
+
+
+
+

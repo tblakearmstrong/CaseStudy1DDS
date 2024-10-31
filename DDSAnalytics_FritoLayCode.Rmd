@@ -464,7 +464,7 @@ kable(df, caption = "Model Values")
 This analysis has explored various factors contributing to attrition, particularly focusing on Age, Monthly Income, and Overtime. A k-NN and Naive Bayes classification model were implemented to assess the impact of these factors on attrition prediction.  Ultimately we decided the NAive Bayes model was better at the prediction between the three variables.  While our positive prediction is lower than desired, we plan on adding more variables to better predict attrition.
 ```
 
-```{r, include = FALSE}
+```{r 300 blind data application, include = FALSE}
 library(e1071)  # Naive Bayes
 library(caret)  # confusionMatrix
 

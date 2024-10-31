@@ -452,7 +452,9 @@ kable(df, caption = "Model Values")
 This analysis has explored various factors contributing to attrition, particularly focusing on Age, Monthly Income, and Overtime. A k-NN and Naive Bayes classification model were implemented to assess the impact of these factors on attrition prediction.  Ultimately we decided the NAive Bayes model was better at the prediction between the three variables.  While our positive prediction is lower than desired, we plan on adding more variables to better predict attrition.
 ```
 
-```{r 300 blind data application, include = FALSE}
+### **Last Step**
+ - Predict 300 blind values and provide back to Frito Lay for their analysis.
+```{r 300 blind data application, echo = FALSE, include = TRUE}
 library(e1071)  # Naive Bayes
 library(caret)  # confusionMatrix
 
@@ -492,11 +494,14 @@ final_class = ifelse(avg_predictions >= threshold, "Yes", "No")
 # Combine predictions with new data
 results <- data.frame(predict_data, Predicted_Attrition = final_class)
 
+# Show just Id and Attrition Prediction
+simplified_results <- results %>% 
+  select(ID, Predicted_Attrition)
+
 # View results
-print(results)
+print(simplified_results)
 
 # Write to file
-write.csv(results, "predicted_results.csv", row.names = FALSE)
+#write.csv(results, "predicted_results.csv", row.names = FALSE)
 ```
-
 

@@ -464,7 +464,51 @@ kable(df, caption = "Model Values")
 This analysis has explored various factors contributing to attrition, particularly focusing on Age, Monthly Income, and Overtime. A k-NN and Naive Bayes classification model were implemented to assess the impact of these factors on attrition prediction.  Ultimately we decided the NAive Bayes model was better at the prediction between the three variables.  While our positive prediction is lower than desired, we plan on adding more variables to better predict attrition.
 ```
 
+```{r, include = FALSE}
+library(e1071)  # Naive Bayes
+library(caret)  # confusionMatrix
 
 
+dataset <- read.csv("C:\\Users\\Blake Armstrong\\OneDrive\\Desktop\\MSDS\\Case Study 1\\CaseStudy1-data.csv", header=TRUE)
+predict_data <- read.csv("C:\\Users\\Blake Armstrong\\OneDrive\\Desktop\\MSDS\\Case Study 1\\CaseStudy1CompSet No Attrition.csv", header = TRUE)
+
+iterations = 25
+threshold = 0.15
+
+# Initialize matrix to store predictions
+all_predictions = matrix(0, nrow = nrow(predict_data), ncol = iterations)
+
+# Loop for bootstrapping
+for (j in 1:iterations) {
+  # Sample dataset with replacement
+  train_index = sample(1:nrow(dataset), size = nrow(dataset), replace = TRUE)
+  train = dataset[train_index, ]
+  
+  # Train the Naive Bayes model
+  model <- naiveBayes(Attrition ~ Age + MonthlyIncome + OverTime, data = train, laplace = 1)
+  
+  # Make predictions on the new dataset
+  predictions <- predict(model, predict_data[, c("Age", "MonthlyIncome", "OverTime")])
+  raw_predictions <- predict(model, predict_data[, c("Age", "MonthlyIncome", "OverTime")], type = "raw")
+  
+  # Store the probabilities of "Yes"
+  all_predictions[, j] = raw_predictions[, "Yes"]
+}
+
+# Calculate average predicted probabilities
+avg_predictions = rowMeans(all_predictions)
+
+# Classify based on average probabilities
+final_class = ifelse(avg_predictions >= threshold, "Yes", "No")
+
+# Combine predictions with new data
+results <- data.frame(predict_data, Predicted_Attrition = final_class)
+
+# View results
+print(results)
+
+# Optionally, save the results to a new file
+write.csv(results, "predicted_results.csv", row.names = FALSE)
+```
 
 

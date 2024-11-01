@@ -12,7 +12,7 @@ output:
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-YouTube Presentation Link: <url>
+YouTube Presentation Link: https://youtu.be/9L7G5O_JVLU?feature=shared
 
 ```{r packages, include =FALSE}
 library(knitr)
@@ -32,7 +32,7 @@ library(tidyr)
 #### **Step 1**: Load the data and quickly look at structure and completeness
 **Overview of Dataset and Missing Variables**
 ```{r read in the dataset, include = FALSE}
-dataset <- read.csv("C:\\Users\\Blake Armstrong\\OneDrive\\Desktop\\MSDS\\Case Study 1\\CaseStudy1-data.csv", header = TRUE)
+dataset <- read.csv(file.choose(), header=TRUE)
 
 # Look at the structure and head of the data
 str(dataset$Age)
@@ -47,17 +47,52 @@ gg_miss_var(dataset)
 
 ```
 
-#### **Step 2**: Analyze and explore the data with exploratory data analysis techniques (EDA)
- **2.1) Explore Age Variable vs. Attrition**
+#### **Step 2**: Why are we modelling this data in the first place? Would HR know based off performance reviews and employee feedback?
+```{r Attrition by Job Role}
+dataset %>% 
+  group_by(JobRole) %>% 
+  mutate(total_job_count=n()) %>% 
+  group_by(JobRole, Attrition) %>%
+  summarize(count = n(), total_job_count = first(total_job_count), .groups='drop') %>% 
+  mutate(job_percentage = (count/total_job_count)*100) %>%
+  filter(Attrition =="Yes") %>% 
+  ggplot(aes(x=JobRole, y=job_percentage, fill=Attrition)) + geom_bar(stat = "identity", position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0(round(job_percentage, 1), "%")), vjust = -0.5) +
+  labs(title = "Attrition Rate by Job Role", 
+       x = "Job Role", 
+       y = "Attrition Rate (%)")
+```
+
+- From the previous graph, we can see clearly that some job roles have a significantly higher attrition rate than others.
+ - What is HR looking at as far as feedback to expect this?
+```{r Satisfaction by Job Role}
+#See satisfaction by job role
+dataset %>% 
+  group_by(JobRole) %>% 
+  mutate(avg_satis=mean(JobSatisfaction)) %>% 
+  filter(Attrition =="Yes") %>% 
+  ggplot(aes(x=JobRole, y=avg_satis, fill=Attrition)) + geom_bar(stat = "identity", position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0(round(avg_satis, 1))), vjust = -0.5) +
+  labs(title = "Avg Job Satisfaction by Job Role", 
+       x = "Job Role", 
+       y = "Avg Job Satisfaction (%)")
+```
+
+- With the two previous graphs, and knowledge that we can model about anything, we continue down the route of looking at the data and determining best path forward in modelling.
+
+#### **Step 3**: Analyze and explore the data with exploratory data analysis techniques (EDA)
+ **3.1) Explore Age Variable vs. Attrition**
 ```{r Age Variable vs. Attrition}
 
-##2.1.1 Age Distribution by Attrition
+##3.1.1 Age Distribution by Attrition
 ggplotly(ggplot(dataset, aes(x = Attrition, y = Age, fill = Attrition)) + 
            geom_boxplot() + 
            labs(title = "Age Distribution by Attrition Category"))
 
 
-##2.1.2 Age Buckets
+##3.1.2 Age Buckets
 # Combine Age into buckets for analysis
 dataset$AgeFactor <- cut(dataset$Age, 
                           breaks = c(17, 20, 25, 30, 35, 40, 45, 50, 55, 61), 
@@ -86,7 +121,7 @@ dataset$Attrition <- as.factor(dataset$Attrition)
 t.test(Age ~ Attrition, data = dataset, mu = 0, conf.level = 0.95)
 ```
 
- **2.2) Explore Monthly Income vs. Attrition**
+ **3.2) Explore Monthly Income vs. Attrition**
 ```{r Monthly Income vs. Attrition}
 # Monthly Income Distribution by Attrition
 # Boxplot of Monthly Income by Attrition
@@ -103,7 +138,7 @@ t.test(MonthlyIncome ~ Attrition, data = dataset, mu = 0, conf.level = 0.95)
 
 ```
 
-**2.3) Explore Overtime vs. Attrition**
+**3.3) Explore Overtime vs. Attrition**
  - When we look at the graph, the left box is employees that chose to stay with the company while the right box is those employees that chose to leave.
 ```{r Overtime vs. Attrition}
 # Calculate and plot overtime percentages by attrition
@@ -123,10 +158,14 @@ dataset %>%
        y = "% Employees")
 ```
 
+
+
 ### **Model Building**
 #### **Step 1**: Look at different models, and begin to build analysis
 ##### The first model we want to look at training is a **k-NN Model.**
   - To do this we will need to train the k-value.
+  - Also we will need to decide our train to test split. 
+    - Since we have a highly imblanced set, we'll want as much actuals as possible, therefore we chose a 90% train, 10% test split
 ```{r k-NN Model data normalizing, include = FALSE}
 # Prepare dataset for k-NN model
 # Drop unnecessary columns
@@ -137,7 +176,7 @@ dataset <- dataset[, -which(names(dataset) %in% cols_to_drop)]
 continuous_cols <- sapply(dataset, is.numeric)
 categorical_cols <- dataset[, !continuous_cols]
 
-# One-Hot Encode categorical variables
+# One-Hot Encode categorical variables, excluding Attrition
 categorical_cols <- categorical_cols[, !names(categorical_cols) %in% "Attrition"]
 encoded_categorical <- model.matrix(~ . - 1, data = categorical_cols)
 
@@ -158,11 +197,10 @@ dataset <- cbind(
 ```{r k-NN k training}
 # Running the k-NN Algorithm
 # Loop for many k and the average of many training/test partitions to tune k
-set.seed(1) # for reproducibility
+
 iterations = 30
 numks = 50
-splitperc = 0.7
-CostPerAttrition = 100000
+splitperc = 0.9
 threshold = 0.15
 
 # Create matrices to store results
@@ -208,15 +246,16 @@ for(j in 1:iterations) {
     newmasterAcc[j,i] = newCM$overall["Accuracy"]       # Accuracy
     newmasterSens[j,i] = newCM$byClass["Sensitivity"]   # Sensitivity (Recall for class Yes)
     newmasterSpec[j,i] = newCM$byClass["Specificity"]   # Specificity (Recall for class No)
-    newmasterF1[j, i] = newCM$byClass["F1"]             # F1 Score
+    newmasterF1[j, i] = newCM$byClass["F1"]              # F1 Score
     }
 }
 ```
 
 
 ```{r colmeans for k-value, include=FALSE}
-# Take the average of all the iterations for each k-value
-# Mean Metrics Calculation
+#Take the average of all the iterations for each k-value
+##6.3 Mean Metrics Calculation
+# Calculate mean of each metric across iterations
 MeanAcc = colMeans(masterAcc)
 MeanSens = colMeans(masterSens)
 MeanSpec = colMeans(masterSpec)
@@ -297,7 +336,7 @@ library(ggplot2)  # For plotting
 set.seed(1) # for reproducibility
 
 iterations = 30
-splitperc = 0.7
+splitperc = 0.9
 threshold = 0.15
 k = 35
 
@@ -316,7 +355,7 @@ for(i in 1:iterations) {
   # Create a confusion matrix with mode = "everything"
   CM = confusionMatrix(table(classifications, test$Attrition), mode = "everything")
   
-  # Probability calculations for thresholding
+# Probability calculations for thresholding
   probs = ifelse(classifications == "No", 1 - attributes(classifications)$prob, attributes(classifications)$prob)
   
   newclass = ifelse(probs >= threshold, "Yes", "No")
@@ -343,12 +382,25 @@ kable(df, caption = "Model Values")
 ```
 
 
+#### **Step 3**: Visualize the stats in a confusion matrix
+```{r knn chart}
+cm_table <- as.data.frame(newCM$table)
+
+ggplot(data = cm_table, aes(x = Var2, y = newclass)) +
+  geom_tile(aes(fill = Freq), color = "white") +
+  scale_fill_gradient(low = "white", high = "blue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  theme_minimal() +
+  labs(title = "k-NN Confusion Matrix", x = "Actual", y = "Predicted")
+```
+
+
 ##### The second model we want to look at training is a **Naive Bayes Model.**
   - We run 30 iterations here to see seed effect on model stats.
   - We maintain the 0.15 threshold to compare models apples-to-apples.
 ```{r Naive Bayes}
 # Reread in data to reset dataset
-dataset<- read.csv("C:\\Users\\Blake Armstrong\\OneDrive\\Desktop\\MSDS\\Case Study 1\\CaseStudy1-data.csv", header=TRUE)
+dataset <- read.csv(file.choose(), header=TRUE)
 dataset$OverTime <- as.factor(dataset$OverTime)
 
 library(e1071)  # For Naive Bayes
@@ -358,7 +410,7 @@ library(caret)  # For confusionMatrix
 set.seed(1) # for reproducibility
 
 iterations = 30
-splitPerc = 0.7
+splitPerc = 0.9
 threshold = 0.15
 
 # Initialize vectors for performance metrics
@@ -398,7 +450,7 @@ for(j in 1:iterations) {
   # Calculate the cost of the raw predicted attrition
   raw_confusion_table = table(predictions, test$Attrition)
   CM = confusionMatrix(raw_confusion_table, mode = "everything")
-
+  
   }
 ```
 
@@ -406,7 +458,7 @@ for(j in 1:iterations) {
 ```{r}
 # Create a data frame to hold all metrics
 results_df <- data.frame(
-  Iteration = rep(1:iterations, times = 4),  
+  Iteration = rep(1:iterations, times = 4),  # Generate a sequence from 1 to iterations
   Metric = c(rep("Accuracy", iterations), 
              rep("Sensitivity", iterations), 
              rep("Specificity", iterations), 
@@ -431,7 +483,7 @@ ggplot(results_df, aes(x = Iteration, y = Value, color = Metric)) +
 ```
 
 
-#### **Step 3**: Using the tuned threshold to run Naive Bayes model
+#### **Step 4**: Using the tuned threshold to run Naive Bayes model
   - 30 iterations to calculate model performance averages:
 ```{r}
 # Calculate mean of each metric across iterations
@@ -445,6 +497,18 @@ df <- data.frame(Variable = c("Average Accuracy", "Average Sensitivity", "Averag
 kable(df, caption = "Model Values")
 ```
 
+
+#### **Step 5**: Visualize the stats in a confusion matrix
+```{r naive bayes matrix}
+cm_table <- as.data.frame(newCM$table)
+
+ggplot(data = cm_table, aes(x = Var2, y = newclass)) +
+  geom_tile(aes(fill = Freq), color = "white") +
+  scale_fill_gradient(low = "white", high = "blue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  theme_minimal() +
+  labs(title = "Naive Bayes Confusion Matrix", x = "Actual", y = "Predicted")
+```
 
 ### **Conclusion**
 ```{html r, echo=TRUE}
@@ -504,4 +568,3 @@ print(simplified_results)
 # Write to file
 #write.csv(results, "predicted_results.csv", row.names = FALSE)
 ```
-
